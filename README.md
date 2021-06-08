@@ -5,6 +5,8 @@ psb is small tool to test query execution performance of Promscale
 
 At any point in the execution, user can hit Ctrl-C to stop benchmark. It still displayes report of results collected in that time.
 
+Note: Currently `psb` supports only range queries. Adding support of different query types is easy and I plan to do it as next step.
+
 ## Installation
 Installation of `psb` is very easy. Just `go get` the package and you will have `psb` binary installed in go bin directory.
 
