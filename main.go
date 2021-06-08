@@ -1,103 +1,53 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"sync"
+	"runtime"
 	"time"
 )
 
-type Work struct {
-	numWorkers    int
-	numIterations int
-	query         string
-
-	startTime time.Time
-	endTime   time.Time
-
-	resultsCh     chan int
-	stopCh        chan struct{}
-	stopRequested bool
-	reportDoneCh  chan struct{}
-
-	stats []int
-}
-
-func (w *Work) Init(query string) {
-	w.query = query
-	w.stopCh = make(chan struct{}, w.numWorkers)
-	w.resultsCh = make(chan int)
-	w.reportDoneCh = make(chan struct{}, 1)
-	w.stats = []int{}
-}
-
-func (w *Work) Run() {
-	w.startTime = time.Now()
-	defer func() {
-		w.endTime = time.Now()
-	}()
-
-	// start looking for results
-	go w.ResultListener()
-
-	var wg sync.WaitGroup
-	wg.Add(w.numWorkers)
-
-	for i := 0; i < w.numWorkers; i++ {
-		go func(i int, query string) {
-			defer wg.Done()
-			for iter := 0; iter < w.numIterations; iter++ {
-				select {
-				case <-w.stopCh:
-					log.Println("stop signal received to", i)
-					return
-				default:
-					log.Println(i, "making query:", query, "iteration:", iter)
-					time.Sleep(1 * time.Second)
-					w.resultsCh <- int(time.Now().Unix())
-				}
-			}
-		}(i, w.query)
-	}
-
-	wg.Wait()
-	log.Println("wait over, work is done, no more results")
-	close(w.resultsCh)
-}
-
-func (w *Work) Stop() {
-	w.stopRequested = true
-	log.Println("signalling all workers to stop")
-	for i := 0; i < w.numWorkers; i++ {
-		w.stopCh <- struct{}{}
-	}
-}
-
-func (w *Work) ResultListener() {
-	log.Println("waiting for all results")
-
-	for v := range w.resultsCh {
-		w.stats = append(w.stats, v)
-	}
-
-	w.reportDoneCh <- struct{}{}
-}
-
-func (w *Work) PrintReport() {
-	<-w.reportDoneCh
-	log.Println("time spent:", w.endTime.Sub(w.startTime))
-	log.Println("report is ready:", len(w.stats))
-}
+var (
+	n         = flag.Int("n", 1, "number of workers")
+	i         = flag.Int("i", 10, "number of query executions")
+	t         = flag.Int("t", 10000, "client timeout (in ms)")
+	f         = flag.String("f", "obs-queries.csv", "queries will be read from this file")
+	serverURL = flag.String("url", "http://localhost:9201", "Promscale server URL")
+	cpus      = flag.Int("cpus", runtime.NumCPU(), "number of CPUs to use for go runtime")
+)
 
 func main() {
-	fmt.Println("psb")
+	ctx := context.Background()
+	flag.Parse()
+
+	fmt.Println("psb - benchmarking Promscale")
+
+	queries, err := PrepareQueries(*f)
+	if err != nil {
+		log.Printf("could not build queries. err: %+v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Found %d queries in input file: %s\n", len(queries), *f)
 
 	w := Work{
-		numWorkers:    2,
-		numIterations: 3,
+		numWorkers:    *n,
+		numIterations: *i,
+		cpus:          *cpus,
+		serverURL:     *serverURL,
+		clientTimeout: *t,
 	}
+	w.PrintConf()
+
+	if res := w.Health(ctx); res.isError {
+		log.Println("could not confirm health of given Promscale server, is it running?")
+		log.Println("quitting")
+		os.Exit(1)
+	}
+	log.Println("Promscale health OK, moving to benchmark")
 
 	// handle CtrlC
 	c := make(chan os.Signal, 1)
@@ -109,12 +59,13 @@ func main() {
 		w.Stop()
 	}()
 
-	queries := []string{"aa", "bb"}
-	for _, q := range queries {
-		log.Println("processing query:", q)
+	time.Sleep(1 * time.Second)
+	log.Println("ready to benchmark")
+	for i, q := range queries {
 		if !w.stopRequested {
+			fmt.Println("#", i, "query:", q.queryStr)
 			w.Init(q)
-			w.Run()
+			w.Run(ctx)
 			w.PrintReport()
 		}
 	}

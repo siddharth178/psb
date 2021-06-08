@@ -1,7 +1,110 @@
 # psb - promscale benchmarking
+psb is small tool to test query execution performance of Promscale
 
+`psb` simply spawns multiple workers as instructed by user to send queries listed in input file to Promscale server. If there are multiple queries in input file, queries are benchmarked one after another. After finishing benchmark of one query, stats are reported and then `psb` moves to next query.
 
-## Instructions followed to setup local Promscale and upload sample data
+At any point in the execution, user can hit Ctrl-C to stop benchmark. It still displayes report of results collected in that time.
+
+## Installation
+Installation of `psb` is very easy. Just `go get` the package and you will have `psb` binary installed in go bin directory.
+
+`go get github.com/siddharth178/psb`
+
+## Usage
+
+`psb` accepts multiple options to control how you want to run the benchmark. Queries to benchmark should be provided in a csv file with `|` as field separator. Each line should contain four fields - query, start time, end time, step.
+
+`psb` assumes Promscale server is running at given server URL. Please see Misc section below to know how I setup Promscale locally.
+
+Here is sample input file
+```
+cat obs-queries.csv 
+demo_cpu_usage_seconds_total{mode="idle"}|1597056698698|1597059548699|15000
+avg by(instance) (demo_cpu_usage_seconds_total)|1597057698698|1597058548699|60000
+avg without(instance, mode) (demo_cpu_usage_seconds_total)|1597056698698|1597059548699|120000
+topk by(instance) (2, demo_cpu_usage_seconds_total)|1597058698698|1597059548699|60000
+avg(max by(mode) (demo_cpu_usage_seconds_total))|1597055698698|1597057548699|600000
+```
+
+### Sample run of psb
+```
+$ ~/go/bin/psb --help
+Usage of /home/siddharth/go/bin/psb:
+  -cpus int
+    	number of CPUs to use for go runtime (default 12)
+  -f string
+    	queries will be read from this file (default "obs-queries.csv")
+  -i int
+    	number of query executions (default 10)
+  -n int
+    	number of workers (default 1)
+  -t int
+    	client timeout (in ms) (default 10000)
+  -url string
+    	Promscale server URL (default "http://localhost:9201")
+
+$ ~/go/bin/psb -f temp.csv 
+psb - benchmarking Promscale
+Found 3 queries in input file: temp.csv
+
+benchmark config
+server url: http://localhost:9201
+# concurrent workers/clients: 1
+# iterations of each query: 10
+# CPUs to use: 12
+# client timeout: 10s
+
+2021/06/08 11:10:56 Promscale health OK, moving to benchmark
+2021/06/08 11:10:56 Ctrl-C handler registerd
+2021/06/08 11:10:57 ready to benchmark
+# 0 query: demo_cpu_usage_seconds_total{mode="idle"}|1597056698698|1597059548699|15000
+2021/06/08 11:10:57 waiting for all results
+2021/06/08 11:10:57 wait over, work is done, no more pending results
+2021/06/08 11:10:57 report is ready: 10
+--------
+query str: demo_cpu_usage_seconds_total{mode="idle"}|1597056698698|1597059548699|15000
+#queries: 10
+#failed queries: 0
+total time: 49.544202ms
+min time: 3.612998ms
+max time: 9.679498ms
+avg time: 4.837793ms
+med time: 4.601731ms
+--------
+
+# 1 query: avg by(instance) (demo_cpu_usage_seconds_total)|1597057698698|1597058548699|60000
+2021/06/08 11:10:57 waiting for all results
+2021/06/08 11:10:57 wait over, work is done, no more pending results
+2021/06/08 11:10:57 report is ready: 10
+--------
+query str: avg by(instance) (demo_cpu_usage_seconds_total)|1597057698698|1597058548699|60000
+#queries: 10
+#failed queries: 0
+total time: 46.540355ms
+min time: 3.66021ms
+max time: 6.269597ms
+avg time: 4.533881ms
+med time: 4.405724ms
+--------
+
+# 2 query: avg without(instance, mode) (demo_cpu_usage_seconds_total)|1597056698698|1597059548699|120000
+2021/06/08 11:10:57 waiting for all results
+2021/06/08 11:10:57 wait over, work is done, no more pending results
+2021/06/08 11:10:57 report is ready: 10
+--------
+query str: avg without(instance, mode) (demo_cpu_usage_seconds_total)|1597056698698|1597059548699|120000
+#queries: 10
+#failed queries: 0
+total time: 64.266125ms
+min time: 5.59759ms
+max time: 7.226903ms
+avg time: 6.307687ms
+med time: 6.253603ms
+--------
+```
+
+## Misc
+### Instructions followed to setup local Promscale and upload sample data
 I created small scripts to setup, start and stop timescale-db with promscale. It its lot easier to work with these than using docker commands.
 
 Call `setup.sh` to download and run timescaledb with promscale extension. It also creates necessary network config in docker.
@@ -147,7 +250,7 @@ postgres=# select * from prom_metric.go_threads limit 5;
 (5 rows)
 ```
 
-## Querying Promscale
+### Querying Promscale
 Promscale supports multiple types of Prometheus queries. But all the queries in `obs-queries.csv` are of range type. May be we should support range queries first.
 
 Here is sample run of instant query on local setup
@@ -246,7 +349,7 @@ siddharth@siddharth-ubuntu:~/source/psb$ curl -g "http://localhost:9201/api/v1/q
 }
 ```
 
-## References
+### References
 * How to query Promscale using PromQL
   - https://prometheus.io/docs/prometheus/latest/querying/api/
   - There are 2 types of queries. Instant queries and Range queries

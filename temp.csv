@@ -1,0 +1,3 @@
+demo_cpu_usage_seconds_total{mode="idle"}|1597056698698|1597059548699|15000
+avg by(instance) (demo_cpu_usage_seconds_total)|1597057698698|1597058548699|60000
+avg without(instance, mode) (demo_cpu_usage_seconds_total)|1597056698698|1597059548699|120000
